@@ -383,5 +383,3 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 #uvicorn server:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300
-#docker run --rm -p 8000:8000 -v /path/presistent:/app/games gamething-server
-#docker build -t gamething-server /Users/ozersimsek/Desktop/GameThingClientUi/server
