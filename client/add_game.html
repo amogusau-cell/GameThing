@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Add Game</title>
+    <link rel="stylesheet" href="add_game.css" />
+    <script src="add_game.js" defer></script>
+  </head>
+  <body>
+    <nav class="navbar">
+      <a href="add_game.html">Add Game</a>
+      <a href="library.html">Library</a>
+      <a href="account.html">Account</a>
+    </nav>
+    <div class="main">
+      <aside class="sidebar" id="sidebar">
+        <a href="#" class="sidebar-item add" id="add-btn">
+          <span>Add New</span>
+        </a>
+      </aside>
+      <main class="main-content">
+        <div class="add-file" id="add-file">
+          <p id="username-text">Username: bakasus</p>
+          <a href="#" id="select-file">Select File</a>
+          <p id="path-display">Select a file to show the path</p>
+          <div class="input-area">
+            <p>Url (empty for file mode):</p>
+            <label for="url-input"></label><input id="url-input" placeholder="https://file.com/game.zip" />
+          </div>
+          <div class="input-box">
+            <p>config.yaml:</p>
+            <label for="config"></label><textarea id="config" cols="50" rows="10"></textarea>
+          </div>
+          <a href="#" id="start-upload">Start Upload</a>
+          <p id="upload-percent"></p>
+        </div>
+
+        <div class="look-file" id="look-file">
+          <p>App Name:</p>
+          <p>App Id:</p>
+          <p>Url:</p>
+          <p>User:</p>
+          <div class="input-box">
+            <p>config.yaml:</p>
+            <label for="config2"></label><textarea id="config2" cols="50" rows="10"></textarea>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

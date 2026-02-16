@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Library</title>
+    <link rel="stylesheet" href="library.css" />
+    <script src="library.js" defer></script>
+  </head>
+  <body>
+    <nav class="navbar">
+      <a href="add_game.html">Add Game</a>
+      <a href="library.html">Library</a>
+      <a href="account.html">Account</a>
+    </nav>
+    <div class="layout">
+      <aside class="sidebar" id="sidebar"></aside>
+      <main class="main-content">
+        <div class="game">
+          <img
+            src=""
+            alt="Background"
+            class="background-img"
+            id="background-img"
+          />
+          <div class="game-text-container">
+            <div class="img-container">
+              <img
+                src=""
+                alt="Screenshots"
+                class="screenshots"
+                id="screenshot-img"
+              />
+            </div>
+            <div class="game-text">
+              <div class="game-text-area">
+                <h1 id="game-title">Select a game</h1>
+                <p id="game-size">--</p>
+                <p id="game-status">--</p>
+              </div>
+              <div class="spacer"></div>
+              <div class="game-text-buttons">
+                <a href="#" id="download">Download</a>
+                <a href="#" id="stop-download">Stop Download</a>
+                <a href="#" id="settings">Settings</a>
+                <a href="#" id="open-folder">Open in Finder</a>
+                <a href="#" id="delete-game">Delete</a>
+              </div>
+            </div>
+            <div class="download">
+              <div>
+                <p>Download:</p>
+                <div class="download-bar-container">
+                  <div class="download-bar" id="download-bar"></div>
+                </div>
+                <span class="progress-text" id="download-text">0%</span>
+              </div>
+              <div>
+                <p>Install:</p>
+                <div class="install-bar-container">
+                  <div class="install-bar" id="install-bar"></div>
+                </div>
+                <span class="progress-text" id="install-text">0%</span>
+              </div>
+            </div>
+            <div class="settings-panel hidden" id="settings-panel">
+              <div class="settings-header">
+                <h3>Game Settings</h3>
+                <a href="#" id="settings-close">Close</a>
+              </div>
+              <p>config.yaml</p>
+              <textarea id="settings-config" rows="10"></textarea>
+              <div class="settings-actions">
+                <a href="#" id="settings-save">Save Config</a>
+                <a href="#" id="settings-delete-server" class="danger">Remove From Server</a>
+              </div>
+              <p id="settings-message" class="settings-message"></p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
