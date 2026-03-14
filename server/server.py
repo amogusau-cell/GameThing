@@ -1,3 +1,4 @@
+import fcntl
 import json
 import os
 import shutil
@@ -66,9 +67,6 @@ if not os.path.exists(PROCESSING_PATH / "processes.json"):
     os.makedirs(PROCESSING_PATH, exist_ok=True)
     with open(PROCESSING_PATH / "processes.json", "w") as f:
         f.write("[]")
-
-with open(PROCESSING_PATH / "processes.json", "r") as f:
-    process_data = json.load(open(PROCESSING_PATH / "processes.json"))
 
 
 # ---------- AUTH ----------
@@ -312,7 +310,8 @@ async def create_game(
 
     print("Finished download")
 
-    # Add to processes.json
+    # Add to processes.json — read fresh from disk to avoid overwriting
+    # changes made by process.py since server started
     new_process = ProcessData(
         id=game_data["id"],
         download=1.0,
@@ -320,10 +319,16 @@ async def create_game(
         download_url=""
     )
 
-    process_data.append(new_process.model_dump())
-
-    with open(PROCESSING_PATH / "processes.json", "w") as f:
-        json.dump(process_data, f, indent=2)
+    with open(PROCESSING_PATH / "processes.json", "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            current = json.load(f)
+            current.append(new_process.model_dump())
+            f.seek(0)
+            f.truncate()
+            json.dump(current, f, indent=2)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
     return {"status": "ok"}
 
@@ -341,7 +346,7 @@ async def create_game(
     with open(process_path / "config.yaml", "w") as config_file:
         yaml.dump(game_data, config_file)
 
-    # Add to processes.json
+    # Add to processes.json — read fresh from disk
     new_process = ProcessData(
         id=game_data["id"],
         download=0.0,
@@ -349,10 +354,16 @@ async def create_game(
         download_url=game_data["url"]
     )
 
-    process_data.append(new_process.model_dump())
-
-    with open(PROCESSING_PATH / "processes.json", "w") as f:
-        json.dump(process_data, f, indent=2)
+    with open(PROCESSING_PATH / "processes.json", "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            current = json.load(f)
+            current.append(new_process.model_dump())
+            f.seek(0)
+            f.truncate()
+            json.dump(current, f, indent=2)
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
     return {"status": "ok"}
 

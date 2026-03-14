@@ -1,4 +1,6 @@
 import socket
+import threading
+
 import httpx
 import webview
 import json
@@ -10,7 +12,6 @@ import requests
 
 from downloader import DownloadManager
 
-PORT = 6769
 window_ready = False
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -186,36 +187,25 @@ getSteamData: True
                     return yaml_to_json(game_data)
 
                 def send_file(self, path: str, config: str):
-                    print(f"Sending file {path}")
+                    def do_upload():
+                        print(f"Sending file {path}")
+                        with open("user.json", "r", encoding="utf-8") as f:
+                            user_data = json.load(f)
 
-                    with open("user.json", "r", encoding="utf-8") as f:
-                        user_data = json.load(f)
+                        url = reformat_ip(user_data["ip"]) + "/upload"
 
-                    url = reformat_ip(user_data["ip"]) + "/upload"
+                        with httpx.Client(timeout=None) as client:
+                            with ProgressFileWrapper(path, window) as progress_file:
+                                files = {"file": (os.path.basename(path), progress_file, "application/octet-stream")}
+                                data = {"config": config}
+                                headers = {"x-api-key": user_data["password"]}
+                                response = client.post(url, files=files, data=data, headers=headers)
 
-                    # Use httpx with progress tracking
-                    with httpx.Client(timeout=None) as client:
-                        with ProgressFileWrapper(path, window) as progress_file:
-                            files = {
-                                "file": (os.path.basename(path), progress_file, "application/octet-stream")
-                            }
-                            data = {
-                                "config": config
-                            }
-                            headers = {
-                                "x-api-key": user_data["password"]
-                            }
+                        response.raise_for_status()
+                        print("Upload complete!")
 
-                            response = client.post(
-                                url,
-                                files=files,
-                                data=data,
-                                headers=headers
-                            )
-
-                    response.raise_for_status()
-                    print("Upload complete!")
-                    return response.text
+                    threading.Thread(target=do_upload, daemon=True).start()
+                    return {"status": "started"}
 
                 def download_file(self, config: str):
                     with open("user.json", "r", encoding="utf-8") as f:
