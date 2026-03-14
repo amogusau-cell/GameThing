@@ -42,13 +42,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   const config = document.getElementById("config");
   config.value = `name: Game Name
 id: game_name
-run: path/to/exe
 saveInGameFolder: true
 savePath: path/to/savefolder
 isSteamGame: true
-getSteamData: true
-uploadEndCommand: null
-processEndCommand: null`;
+getSteamData: true`;
 
   let configAdditionalData =
 `url: null

@@ -168,13 +168,19 @@ class DownloadManager:
         self.downloads_dir = base_dir / "downloads"
         self.games_dir = base_dir / "games"
         self.saves_dir = base_dir / "saves"
+        self.cache_dir = base_dir / "cache"
+        self.cache_games_dir = self.cache_dir / "games"
+        self.cache_images_dir = self.cache_dir / "images"
         _ensure_dir(self.downloads_dir)
         _ensure_dir(self.games_dir)
         _ensure_dir(self.saves_dir)
+        _ensure_dir(self.cache_games_dir)
+        _ensure_dir(self.cache_images_dir)
 
         self._lock = threading.Lock()
         self._statuses: Dict[str, DownloadStatus] = {}
         self._cancel_events: Dict[str, threading.Event] = {}
+        self._cache_lock = threading.Lock()
 
     def _set_status(self, game_id: str, **kwargs) -> None:
         with self._lock:
@@ -235,6 +241,179 @@ class DownloadManager:
                 cancel_event.set()
             self._statuses.pop(game_id, None)
 
+    def _cache_game_dir(self, game_id: str) -> Path:
+        return self.cache_games_dir / game_id
+
+    def _cache_image_dir(self, game_id: str) -> Path:
+        return self.cache_images_dir / game_id
+
+    def _read_text(self, path: Path) -> Optional[str]:
+        try:
+            return path.read_text(encoding="utf-8")
+        except Exception:
+            return None
+
+    def _read_yaml(self, path: Path) -> Optional[Dict]:
+        text = self._read_text(path)
+        if text is None:
+            return None
+        try:
+            return yaml.safe_load(text) or {}
+        except Exception:
+            return None
+
+    def _read_json(self, path: Path) -> Optional[Dict]:
+        text = self._read_text(path)
+        if text is None:
+            return None
+        try:
+            return json.loads(text)
+        except Exception:
+            return None
+
+    def _write_text(self, path: Path, text: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    def _cache_config_path(self, game_id: str) -> Path:
+        return self._cache_game_dir(game_id) / "config.yaml"
+
+    def _cache_manifest_path(self, game_id: str) -> Path:
+        return self._cache_game_dir(game_id) / "manifest.json"
+
+    def cache_config_text(self, game_id: str, text: str) -> None:
+        with self._cache_lock:
+            self._write_text(self._cache_config_path(game_id), text)
+
+    def cache_manifest(self, game_id: str, manifest: Dict) -> None:
+        with self._cache_lock:
+            self._write_text(
+                self._cache_manifest_path(game_id),
+                json.dumps(manifest, indent=2),
+            )
+
+    def _load_config_text(self, game_id: str) -> Optional[str]:
+        local_path = self.games_dir / game_id / "config.yaml"
+        cache_path = self._cache_config_path(game_id)
+        if local_path.exists():
+            return self._read_text(local_path)
+        if cache_path.exists():
+            return self._read_text(cache_path)
+        return None
+
+    def _load_manifest(self, game_id: str) -> Optional[Dict]:
+        local_path = self.games_dir / game_id / "manifest.json"
+        cache_path = self._cache_manifest_path(game_id)
+        if local_path.exists():
+            return self._read_json(local_path)
+        if cache_path.exists():
+            return self._read_json(cache_path)
+        return None
+
+    def _fetch_config_text(
+        self,
+        server_url: str,
+        headers: Dict[str, str],
+        game_id: str,
+    ) -> Optional[str]:
+        r = requests.get(
+            f"{server_url}/games/{game_id}/download/config.yaml",
+            headers=headers,
+            timeout=10,
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.text
+
+    def _fetch_manifest(
+        self,
+        server_url: str,
+        headers: Dict[str, str],
+        game_id: str,
+    ) -> Optional[Dict]:
+        r = requests.get(
+            f"{server_url}/games/{game_id}/download/manifest.json",
+            headers=headers,
+            timeout=10,
+        )
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        try:
+            return r.json()
+        except Exception:
+            return None
+
+    def get_cached_image(
+        self,
+        game_id: str,
+        image_name: str,
+        server_url: str,
+        api_key: str,
+    ) -> Optional[Path]:
+        if "/" in image_name or "\\" in image_name:
+            return None
+
+        cache_path = self._cache_image_dir(game_id) / image_name
+        missing_marker = cache_path.with_suffix(cache_path.suffix + ".missing")
+        if cache_path.exists():
+            return cache_path
+        if missing_marker.exists():
+            return None
+
+        url = f"{server_url}/games/{game_id}/images/{image_name}"
+        headers = {"X-API-Key": api_key}
+
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+
+        try:
+            with requests.get(url, stream=True, headers=headers, timeout=10) as r:
+                if r.status_code == 404:
+                    missing_marker.write_text("missing", encoding="utf-8")
+                    return None
+                r.raise_for_status()
+                with open(tmp_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                        if chunk:
+                            f.write(chunk)
+            tmp_path.replace(cache_path)
+            missing_marker.unlink(missing_ok=True)
+            return cache_path
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            return None
+
+    def cache_info(self, game_id: str) -> Dict:
+        config_path = self._cache_config_path(game_id)
+        manifest_path = self._cache_manifest_path(game_id)
+        images_dir = self._cache_image_dir(game_id)
+
+        config_bytes = config_path.stat().st_size if config_path.exists() else 0
+        manifest_bytes = manifest_path.stat().st_size if manifest_path.exists() else 0
+
+        images_bytes = 0
+        images_count = 0
+        if images_dir.exists():
+            for item in images_dir.iterdir():
+                if item.is_file() and not item.name.endswith(".missing") and not item.name.endswith(".tmp"):
+                    images_count += 1
+                    images_bytes += item.stat().st_size
+
+        total_bytes = config_bytes + manifest_bytes + images_bytes
+
+        return {
+            "config": {"exists": config_path.exists(), "bytes": config_bytes},
+            "manifest": {"exists": manifest_path.exists(), "bytes": manifest_bytes},
+            "images": {"count": images_count, "bytes": images_bytes},
+            "total_bytes": total_bytes,
+        }
+
+    def clear_cache(self, game_id: str) -> None:
+        _safe_rmtree(self._cache_game_dir(game_id))
+        _safe_rmtree(self._cache_image_dir(game_id))
+
     def _restore_saves(self, game_id: str, config: Dict, game_dir: Path) -> None:
         if not config.get("saveInGameFolder", False):
             return
@@ -283,38 +462,39 @@ class DownloadManager:
 
         library = []
         for game_id in game_ids:
-            try:
-                config_r = requests.get(
-                    f"{server_url}/games/{game_id}/download/config.yaml",
-                    headers=headers,
-                    timeout=10,
-                )
-                config_r.raise_for_status()
-                config = yaml.safe_load(config_r.text) or {}
+            config_text = self._load_config_text(game_id)
+            manifest = self._load_manifest(game_id)
 
-                manifest_r = requests.get(
-                    f"{server_url}/games/{game_id}/download/manifest.json",
-                    headers=headers,
-                    timeout=10,
-                )
-                manifest_r.raise_for_status()
-                manifest = manifest_r.json()
+            if config_text is None or manifest is None:
+                try:
+                    if config_text is None:
+                        config_text = self._fetch_config_text(server_url, headers, game_id)
+                        if config_text is not None:
+                            self.cache_config_text(game_id, config_text)
+                    if manifest is None:
+                        manifest = self._fetch_manifest(server_url, headers, game_id)
+                        if manifest is not None:
+                            self.cache_manifest(game_id, manifest)
+                except Exception:
+                    pass
 
+            config = {}
+            if config_text:
+                try:
+                    config = yaml.safe_load(config_text) or {}
+                except Exception:
+                    config = {}
+
+            size_bytes = 0
+            if isinstance(manifest, dict):
                 size_bytes = sum(f.get("size", 0) for f in manifest.get("files", []))
 
-                library.append({
-                    "id": game_id,
-                    "name": config.get("name", game_id),
-                    "size_bytes": size_bytes,
-                    "installed": (self.games_dir / game_id).exists(),
-                })
-            except Exception:
-                library.append({
-                    "id": game_id,
-                    "name": game_id,
-                    "size_bytes": 0,
-                    "installed": (self.games_dir / game_id).exists(),
-                })
+            library.append({
+                "id": game_id,
+                "name": config.get("name", game_id),
+                "size_bytes": size_bytes,
+                "installed": (self.games_dir / game_id).exists(),
+            })
 
         return library
 
@@ -348,6 +528,7 @@ class DownloadManager:
             config_r.raise_for_status()
             (work_dir / "config.yaml").write_text(config_r.text, encoding="utf-8")
             config_data = yaml.safe_load(config_r.text) or {}
+            self.cache_config_text(game_id, config_r.text)
 
             manifest_r = requests.get(
                 f"{server_url}/games/{game_id}/download/manifest.json",
@@ -360,6 +541,8 @@ class DownloadManager:
                 json.dumps(manifest, indent=2),
                 encoding="utf-8",
             )
+            if isinstance(manifest, dict):
+                self.cache_manifest(game_id, manifest)
 
             file_map = {f["name"]: f for f in manifest.get("files", [])}
             total_bytes = sum(f.get("size", 0) for f in manifest.get("files", [])) or 1

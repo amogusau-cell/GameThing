@@ -2,9 +2,12 @@ import fcntl
 import json
 import os
 import shutil
+import logging
+import threading
+import time
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 import yaml
 from pydantic import BaseModel
 import subprocess
@@ -14,6 +17,13 @@ app = FastAPI()
 GAME_PATH = Path("games")
 PROCESSING_PATH = Path("processes")
 USERS_PATH = Path("users.yaml")
+RESTART_ON_ERROR = True
+RESTART_DELAY_SEC = 1.0
+MAX_RESTART_ATTEMPTS = 5
+
+restart_requested = threading.Event()
+restart_lock = threading.Lock()
+server_instance = None
 
 
 class CreateGameData(BaseModel):
@@ -42,6 +52,29 @@ class DeleteAccountData(BaseModel):
 
 def serialize_process_list(processes: list[ProcessData]) -> list[dict]:
     return [p.model_dump() for p in processes]
+
+
+def request_restart(reason: str | None = None, exc: Exception | None = None) -> None:
+    if not RESTART_ON_ERROR:
+        return
+
+    with restart_lock:
+        if restart_requested.is_set():
+            return
+        restart_requested.set()
+
+    if exc is not None:
+        logging.error(
+            "Restart requested%s",
+            f": {reason}" if reason else "",
+            exc_info=(type(exc), exc, exc.__traceback__)
+        )
+    elif reason:
+        logging.error("Restart requested: %s", reason)
+
+    global server_instance
+    if server_instance is not None:
+        server_instance.should_exit = True
 
 
 # ---------- LOAD USERS ----------
@@ -207,6 +240,11 @@ def start():
 def stop():
     if process:
         process.terminate()
+
+@app.exception_handler(Exception)
+async def handle_unhandled_exception(request: Request, exc: Exception):
+    request_restart("Unhandled exception", exc)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 @app.get("/")
 def check_user(user: str = Depends(auth_user)):
@@ -391,6 +429,35 @@ def get_image(game_id: str, image_id: str, user: str = Depends(auth_user)):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    def run_server():
+        global server_instance
+        config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+        server_instance = uvicorn.Server(config)
+        server_instance.run()
+
+    restart_attempts = 0
+    while True:
+        restart_requested.clear()
+        try:
+            run_server()
+        except KeyboardInterrupt:
+            break
+        except Exception as exc:
+            if not RESTART_ON_ERROR:
+                raise
+            request_restart("Server crashed", exc)
+
+        if not RESTART_ON_ERROR or not restart_requested.is_set():
+            restart_attempts = 0
+            break
+
+        restart_attempts += 1
+        if restart_attempts >= MAX_RESTART_ATTEMPTS:
+            logging.error(
+                "Max restart attempts reached (%s). Server will stop.",
+                MAX_RESTART_ATTEMPTS
+            )
+            break
+        time.sleep(RESTART_DELAY_SEC)
 
 #uvicorn server:app --host 0.0.0.0 --port 8000 --timeout-keep-alive 300

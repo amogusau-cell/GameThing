@@ -98,6 +98,12 @@ body {
   border-radius: var(--border);
 }
 
+.sidebar-item img.is-placeholder {
+  object-fit: contain;
+  background-color: #1a1a1a;
+  opacity: 0.7;
+}
+
 .main-content {
   flex: 1;
   min-width: 0;
@@ -117,7 +123,16 @@ body {
 .background-img {
   width: 100%;
   height: auto;
+  display: block;
+  object-fit: cover;
+  aspect-ratio: 16 / 9;
+  background-color: #151515;
   border-radius: var(--border);
+}
+
+.background-img.is-placeholder {
+  object-fit: contain;
+  opacity: 0.7;
 }
 
 .game-text-container {
@@ -244,6 +259,7 @@ body {
   height: 55%;
   border-radius: var(--border);
   pointer-events: none;
+  background-color: #141414;
 }
 
 .img-container img {
@@ -269,6 +285,13 @@ body {
 .screenshots {
   transition: transform 0.6s ease, opacity 0.6s ease;
   will-change: transform;
+}
+
+.screenshots.is-placeholder {
+  object-fit: contain;
+  opacity: 0.7;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .slide-out-left {

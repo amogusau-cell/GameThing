@@ -407,6 +407,7 @@ getSteamData: True
                         timeout=10
                     )
                     r.raise_for_status()
+                    download_manager.cache_config_text(game_id, r.text)
                     return r.text
 
                 def update_server_config(self, game_id: str, config: str):
@@ -431,6 +432,7 @@ getSteamData: True
                     local_config = BASE_DIR / "games" / game_id / "config.yaml"
                     if local_config.exists():
                         local_config.write_text(config, encoding="utf-8")
+                    download_manager.cache_config_text(game_id, config)
 
                     return {"status": "ok"}
 
@@ -451,6 +453,38 @@ getSteamData: True
                     if r.status_code != 200:
                         return {"status": "error", "message": r.json().get("detail", "Failed")}
 
+                    download_manager.clear_cache(game_id)
+                    return {"status": "ok"}
+
+                def get_cached_image_url(self, game_id: str, image_name: str):
+                    if Path(game_id).name != game_id or game_id in ("", ".", ".."):
+                        return ""
+                    with open("user.json", "r", encoding="utf-8") as f:
+                        user_data = json.load(f)
+
+                    server_url = reformat_ip(user_data["ip"])
+                    api_key = user_data["password"]
+
+                    image_path = download_manager.get_cached_image(
+                        game_id,
+                        image_name,
+                        server_url,
+                        api_key
+                    )
+                    if not image_path:
+                        return ""
+                    return image_path.resolve().as_uri()
+
+                def get_cache_info(self, game_id: str):
+                    if Path(game_id).name != game_id or game_id in ("", ".", ".."):
+                        return {"status": "error", "message": "Invalid game id"}
+                    info = download_manager.cache_info(game_id)
+                    return {"status": "ok", "info": info}
+
+                def clear_cache(self, game_id: str):
+                    if Path(game_id).name != game_id or game_id in ("", ".", ".."):
+                        return {"status": "error", "message": "Invalid game id"}
+                    download_manager.clear_cache(game_id)
                     return {"status": "ok"}
 
             api = Api()

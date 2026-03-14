@@ -1,5 +1,1 @@
 users:
-  alice:
-    api_key: "alice-key-123"
-  bob:
-    api_key: "bob-key-456"
