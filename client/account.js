@@ -67,7 +67,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   try {
     const usage = await window.pywebview.api.get_local_usage();
     if (usageEl) {
-      usageEl.textContent = `Storage used: ${formatBytes(usage.total)} (games ${formatBytes(usage.games)}, downloads ${formatBytes(usage.downloads)})`;
+      usageEl.textContent = `Storage used: ${formatBytes(usage.total)} (games ${formatBytes(usage.games)}, downloads ${formatBytes(usage.downloads)}, cache ${formatBytes(usage.cache || 0)})`;
     }
   } catch (e) {
     if (usageEl) usageEl.textContent = "Storage used: --";

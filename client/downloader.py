@@ -385,6 +385,16 @@ class DownloadManager:
             tmp_path.unlink(missing_ok=True)
             return None
 
+    def _cache_image_stats(self, images_dir: Path) -> tuple[int, int]:
+        images_count = 0
+        images_bytes = 0
+        if images_dir.exists():
+            for item in images_dir.iterdir():
+                if item.is_file() and not item.name.endswith(".missing") and not item.name.endswith(".tmp"):
+                    images_count += 1
+                    images_bytes += item.stat().st_size
+        return images_count, images_bytes
+
     def cache_info(self, game_id: str) -> Dict:
         config_path = self._cache_config_path(game_id)
         manifest_path = self._cache_manifest_path(game_id)
@@ -393,13 +403,7 @@ class DownloadManager:
         config_bytes = config_path.stat().st_size if config_path.exists() else 0
         manifest_bytes = manifest_path.stat().st_size if manifest_path.exists() else 0
 
-        images_bytes = 0
-        images_count = 0
-        if images_dir.exists():
-            for item in images_dir.iterdir():
-                if item.is_file() and not item.name.endswith(".missing") and not item.name.endswith(".tmp"):
-                    images_count += 1
-                    images_bytes += item.stat().st_size
+        images_count, images_bytes = self._cache_image_stats(images_dir)
 
         total_bytes = config_bytes + manifest_bytes + images_bytes
 
@@ -410,9 +414,62 @@ class DownloadManager:
             "total_bytes": total_bytes,
         }
 
+    def cache_info_all(self) -> Dict:
+        game_ids = set()
+
+        config_count = 0
+        config_bytes = 0
+        manifest_count = 0
+        manifest_bytes = 0
+        images_count = 0
+        images_bytes = 0
+
+        if self.cache_games_dir.exists():
+            for game_dir in self.cache_games_dir.iterdir():
+                if not game_dir.is_dir():
+                    continue
+                game_ids.add(game_dir.name)
+
+                config_path = game_dir / "config.yaml"
+                if config_path.exists() and config_path.is_file():
+                    config_count += 1
+                    config_bytes += config_path.stat().st_size
+
+                manifest_path = game_dir / "manifest.json"
+                if manifest_path.exists() and manifest_path.is_file():
+                    manifest_count += 1
+                    manifest_bytes += manifest_path.stat().st_size
+
+        if self.cache_images_dir.exists():
+            for game_dir in self.cache_images_dir.iterdir():
+                if not game_dir.is_dir():
+                    continue
+                game_ids.add(game_dir.name)
+                count, size = self._cache_image_stats(game_dir)
+                images_count += count
+                images_bytes += size
+
+        total_bytes = config_bytes + manifest_bytes + images_bytes
+
+        return {
+            "games": len(game_ids),
+            "config": {"count": config_count, "bytes": config_bytes},
+            "manifest": {"count": manifest_count, "bytes": manifest_bytes},
+            "images": {"count": images_count, "bytes": images_bytes},
+            "total_bytes": total_bytes,
+        }
+
     def clear_cache(self, game_id: str) -> None:
-        _safe_rmtree(self._cache_game_dir(game_id))
-        _safe_rmtree(self._cache_image_dir(game_id))
+        with self._cache_lock:
+            _safe_rmtree(self._cache_game_dir(game_id))
+            _safe_rmtree(self._cache_image_dir(game_id))
+
+    def clear_all_cache(self) -> None:
+        with self._cache_lock:
+            _safe_rmtree(self.cache_games_dir)
+            _safe_rmtree(self.cache_images_dir)
+            _ensure_dir(self.cache_games_dir)
+            _ensure_dir(self.cache_images_dir)
 
     def _restore_saves(self, game_id: str, config: Dict, game_dir: Path) -> None:
         if not config.get("saveInGameFolder", False):

@@ -9,6 +9,7 @@ import os, sys
 import shutil
 import yaml
 import requests
+from urllib.parse import quote
 
 from downloader import DownloadManager
 
@@ -115,6 +116,16 @@ def folder_size(path: Path) -> int:
         if p.is_file():
             total += p.stat().st_size
     return total
+
+def path_to_webview_url(path: Path) -> str:
+    """Return a webview-safe URL for a local file under BASE_DIR."""
+    resolved = path.resolve()
+    try:
+        rel = resolved.relative_to(BASE_DIR.resolve())
+        return quote(rel.as_posix(), safe="/")
+    except Exception:
+        # Fallback for unexpected locations.
+        return resolved.as_uri()
 
 def load_game_config(game_dir: Path) -> dict:
     config_path = game_dir / "config.yaml"
@@ -328,11 +339,13 @@ getSteamData: True
                 def get_local_usage(self):
                     games_size = folder_size(BASE_DIR / "games")
                     downloads_size = folder_size(BASE_DIR / "downloads")
-                    total = games_size + downloads_size
+                    cache_size = folder_size(BASE_DIR / "cache")
+                    total = games_size + downloads_size + cache_size
                     return {
                         "total": total,
                         "games": games_size,
-                        "downloads": downloads_size
+                        "downloads": downloads_size,
+                        "cache": cache_size
                     }
 
                 def change_password(self, current_password: str, new_password: str):
@@ -473,7 +486,11 @@ getSteamData: True
                     )
                     if not image_path:
                         return ""
-                    return image_path.resolve().as_uri()
+                    try:
+                        version = image_path.stat().st_mtime_ns
+                    except OSError:
+                        return ""
+                    return f"{path_to_webview_url(image_path)}?v={version}"
 
                 def get_cache_info(self, game_id: str):
                     if Path(game_id).name != game_id or game_id in ("", ".", ".."):
@@ -485,6 +502,14 @@ getSteamData: True
                     if Path(game_id).name != game_id or game_id in ("", ".", ".."):
                         return {"status": "error", "message": "Invalid game id"}
                     download_manager.clear_cache(game_id)
+                    return {"status": "ok"}
+
+                def get_cache_info_all(self):
+                    info = download_manager.cache_info_all()
+                    return {"status": "ok", "info": info}
+
+                def clear_all_cache(self):
+                    download_manager.clear_all_cache()
                     return {"status": "ok"}
 
             api = Api()

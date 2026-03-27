@@ -112,6 +112,14 @@ function formatCacheInfo(info) {
   ].join(" | ");
 }
 
+function formatCacheSummary(info) {
+  if (!info) return "Total cache: --";
+  const games = info.games || 0;
+  const images = info.images || {};
+  const total = info.total_bytes || 0;
+  return `Total cache: ${formatBytes(total)} across ${games} game(s), ${images.count || 0} image file(s)`;
+}
+
 function renderSidebar() {
   const sidebar = document.getElementById("sidebar");
   if (!sidebar) return;
@@ -378,6 +386,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     await waitForApiMethod("get_cached_image_url");
     await waitForApiMethod("get_cache_info");
     await waitForApiMethod("clear_cache");
+    await waitForApiMethod("get_cache_info_all");
+    await waitForApiMethod("clear_all_cache");
 
     if (window.pywebview?.api?.get_server_ip) break;
     await new Promise((r) => setTimeout(r, 200));
@@ -449,22 +459,48 @@ document.addEventListener("DOMContentLoaded", async () => {
   const settingsSave = document.getElementById("settings-save");
   const settingsDeleteServer = document.getElementById("settings-delete-server");
   const settingsMessage = document.getElementById("settings-message");
+  const cacheSummary = document.getElementById("cache-summary");
   const cacheInfo = document.getElementById("cache-info");
   const cacheInfoBtn = document.getElementById("cache-info-btn");
   const cacheClearBtn = document.getElementById("cache-clear-btn");
+  const cacheClearAllBtn = document.getElementById("cache-clear-all-btn");
+
+  const loadCacheSummary = async () => {
+    if (!cacheSummary) return;
+    cacheSummary.textContent = "Loading total cache...";
+    try {
+      const api = window.pywebview?.api;
+      if (!api || typeof api.get_cache_info_all !== "function") {
+        cacheSummary.textContent = "Total cache info unavailable.";
+        return;
+      }
+      const res = await api.get_cache_info_all();
+      if (res.status === "ok") {
+        cacheSummary.textContent = formatCacheSummary(res.info);
+      } else {
+        cacheSummary.textContent = res.message || "Failed to load total cache info.";
+      }
+    } catch (err) {
+      cacheSummary.textContent = "Failed to load total cache info.";
+    }
+  };
 
   const loadCacheInfo = async () => {
-    if (!cacheInfo || !state.selectedId) return;
-    cacheInfo.textContent = "Loading cache info...";
+    if (!cacheInfo) return;
+    if (!state.selectedId) {
+      cacheInfo.textContent = "Selected game cache: --";
+      return;
+    }
+    cacheInfo.textContent = "Loading selected cache...";
     try {
       const res = await window.pywebview.api.get_cache_info(state.selectedId);
       if (res.status === "ok") {
-        cacheInfo.textContent = formatCacheInfo(res.info);
+        cacheInfo.textContent = `Selected game cache: ${formatCacheInfo(res.info)}`;
       } else {
-        cacheInfo.textContent = res.message || "Failed to load cache info.";
+        cacheInfo.textContent = res.message || "Failed to load selected cache info.";
       }
     } catch (err) {
-      cacheInfo.textContent = "Failed to load cache info.";
+      cacheInfo.textContent = "Failed to load selected cache info.";
     }
   };
 
@@ -478,11 +514,12 @@ document.addEventListener("DOMContentLoaded", async () => {
       try {
         const text = await window.pywebview.api.get_server_config(state.selectedId);
         settingsConfig.value = text;
-        await loadCacheInfo();
+        await Promise.all([loadCacheSummary(), loadCacheInfo()]);
       } catch (err) {
         settingsConfig.value = "";
         settingsMessage.textContent = "Failed to load config.";
-        if (cacheInfo) cacheInfo.textContent = "Cache info unavailable.";
+        if (cacheSummary) cacheSummary.textContent = "Total cache info unavailable.";
+        if (cacheInfo) cacheInfo.textContent = "Selected cache info unavailable.";
       }
     });
   }
@@ -532,7 +569,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (cacheInfoBtn) {
     cacheInfoBtn.addEventListener("click", async (e) => {
       e.preventDefault();
-      await loadCacheInfo();
+      await Promise.all([loadCacheSummary(), loadCacheInfo()]);
     });
   }
 
@@ -543,9 +580,29 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (!confirm("Clear cached files for this game?")) return;
       const res = await window.pywebview.api.clear_cache(state.selectedId);
       if (res.status === "ok") {
-        await loadCacheInfo();
+        await Promise.all([loadCacheSummary(), loadCacheInfo()]);
+        selectGame(state.selectedId);
       } else if (cacheInfo) {
         cacheInfo.textContent = res.message || "Failed to clear cache.";
+      }
+    });
+  }
+
+  if (cacheClearAllBtn) {
+    cacheClearAllBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      if (!confirm("Clear all cached files for every game?")) return;
+      const api = window.pywebview?.api;
+      if (!api || typeof api.clear_all_cache !== "function") {
+        if (cacheSummary) cacheSummary.textContent = "Clear all cache is unavailable.";
+        return;
+      }
+      const res = await api.clear_all_cache();
+      if (res.status === "ok") {
+        await Promise.all([loadCacheSummary(), loadCacheInfo()]);
+        if (state.selectedId) selectGame(state.selectedId);
+      } else if (cacheSummary) {
+        cacheSummary.textContent = res.message || "Failed to clear all cache.";
       }
     });
   }
